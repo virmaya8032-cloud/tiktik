@@ -1,8 +1,9 @@
 import { api } from '../api.js';
 import { html, el, $, modal, toast, copyText } from '../ui.js';
 import { icons } from '../icons.js';
+import { openReportDialog } from './report.js';
 
-/** Share sheet: copy link, device share sheet, email. Every share is recorded. */
+/** Share sheet: copy link, device share sheet, email, report. Every share is recorded. */
 export function openShareSheet(video, onUpdated) {
   const url = `${location.origin}/@${video.author.username}/video/${video.id}`;
   const record = async (channel) => {
@@ -16,6 +17,7 @@ export function openShareSheet(video, onUpdated) {
       <button class="share-opt" data-ch="copy_link"><span class="share-ic">${icons.link}</span>Copy link</button>
       ${navigator.share ? html`<button class="share-opt" data-ch="native"><span class="share-ic">${icons.device}</span>More options</button>` : ''}
       <button class="share-opt" data-ch="email"><span class="share-ic">${icons.mail}</span>Email</button>
+      ${video.viewer.isAuthor ? '' : html`<button class="share-opt" data-ch="report"><span class="share-ic">${icons.flag}</span>Report</button>`}
     </div>
     <label class="field"><span>Link</span><input readonly value="${url}" class="share-url"></label>
     <p class="muted small share-email" hidden>Paste the link into an email to <em>anyone</em>, subject: "Check out this TikTik video".</p>
@@ -26,7 +28,10 @@ export function openShareSheet(video, onUpdated) {
     const b = e.target.closest('[data-ch]');
     if (!b) return;
     const ch = b.dataset.ch;
-    if (ch === 'copy_link') {
+    if (ch === 'report') {
+      m.close();
+      openReportDialog({ type: 'video', id: video.id, label: 'video' });
+    } else if (ch === 'copy_link') {
       if (await copyText(url)) { toast('Link copied', 'success'); await record('copy_link'); m.close(); }
       else toast('Copy failed - select the link and copy it manually', 'error');
     } else if (ch === 'native') {

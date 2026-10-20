@@ -50,5 +50,7 @@ export const icons = {
   verified: raw('<svg class="verified" viewBox="0 0 24 24" width="15" height="15" aria-label="Verified"><circle cx="12" cy="12" r="10" fill="#E11D2E"/><path d="M7.5 12.3l3 3 6-6.3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'),
   hash: svg('<path d="M5 9h15M4 15h15M10 3L8 21M16 3l-2 18"/>'),
   check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', { size: 18 }),
+  flag: svg('<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>'),
+  block: svg('<circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/>'),
   more: svg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>', { fill: true }),
 };

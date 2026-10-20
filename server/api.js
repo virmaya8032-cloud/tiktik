@@ -13,6 +13,10 @@ const HASHTAG_RE = /#([\p{L}\p{N}_]{1,50})/gu;
 const MENTION_RE = /@([a-z0-9_.]{3,24})/gi;
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
+export const REPORT_REASONS = ['spam', 'harassment', 'hate', 'violence', 'sexual', 'minor_safety', 'self_harm', 'misinformation', 'intellectual_property', 'other'];
+
+// SQL: true when users a and b have blocked each other in either direction.
+const BLOCKED_PAIR = (a, b) => `EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = ${a} AND blocked_id = ${b}) OR (blocker_id = ${b} AND blocked_id = ${a}))`;
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -70,8 +74,9 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   const mediaUrl = (p) => (p ? `/media/${p.replace(/\\/g, '/')}` : null);
 
   // ---------- serializers ----------
-  const VISIBLE = `(v.privacy = 'public' OR v.user_id = :viewer OR (v.privacy = 'followers' AND EXISTS (
-      SELECT 1 FROM follows f WHERE f.follower_id = :viewer AND f.followee_id = v.user_id)))`;
+  const VISIBLE = `((v.privacy = 'public' OR v.user_id = :viewer OR (v.privacy = 'followers' AND EXISTS (
+      SELECT 1 FROM follows f WHERE f.follower_id = :viewer AND f.followee_id = v.user_id)))
+    AND NOT ${BLOCKED_PAIR(':viewer', 'v.user_id')})`;
   const VIDEO_COLS = `
     v.*, u.username, u.display_name, u.avatar_path, u.verified,
     (SELECT COUNT(*) FROM likes WHERE video_id = v.id) AS like_count,
@@ -163,10 +168,13 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     return v;
   }
 
+  const blockedPair = db.prepare(`SELECT ${BLOCKED_PAIR(':a', ':b')} AS blocked`);
+  const isBlocked = (a, b) => !!blockedPair.get({ a, b }).blocked;
+
   const insertNotif = db.prepare(`INSERT INTO notifications (user_id, actor_id, type, video_id, comment_id, created_at)
                                   VALUES (?, ?, ?, ?, ?, ?)`);
   function notify(userId, actorId, type, videoId = null, commentId = null) {
-    if (userId === actorId) return;
+    if (userId === actorId || isBlocked(userId, actorId)) return;
     insertNotif.run(userId, actorId, type, videoId, commentId, Date.now());
   }
   function notifyMentions(text, actorId, videoId, commentId) {
@@ -389,7 +397,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   }
   const COMMENT_SQL = `SELECT c.*, u.username, u.display_name, u.avatar_path, u.verified, :viewer AS viewer_id,
       (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id) AS like_count,
-      (SELECT COUNT(*) FROM comments r WHERE r.parent_id = c.id) AS reply_count,
+      (SELECT COUNT(*) FROM comments r WHERE r.parent_id = c.id AND NOT ${BLOCKED_PAIR(':viewer', 'r.user_id')}) AS reply_count,
       EXISTS (SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = :viewer) AS liked
     FROM comments c JOIN users u ON u.id = c.user_id`;
 
@@ -397,9 +405,10 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const viewer = viewerId(req);
     const v = mustVisibleVideo(req.params.id, viewer);
     const parent = req.query.parent ? toInt(req.query.parent, 0, 0, Number.MAX_SAFE_INTEGER) : null;
+    const notBlocked = `NOT ${BLOCKED_PAIR(':viewer', 'c.user_id')}`;
     const rows = parent
-      ? db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id = :parent ORDER BY c.created_at ASC`).all({ viewer, vid: v.id, parent })
-      : db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id IS NULL ORDER BY like_count DESC, c.created_at DESC LIMIT 200`).all({ viewer, vid: v.id });
+      ? db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id = :parent AND ${notBlocked} ORDER BY c.created_at ASC`).all({ viewer, vid: v.id, parent })
+      : db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id IS NULL AND ${notBlocked} ORDER BY like_count DESC, c.created_at DESC LIMIT 200`).all({ viewer, vid: v.id });
     res.json({ items: rows.map(serializeComment), allowComments: v.allowComments });
   });
 
@@ -414,6 +423,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     if (parentId) {
       parent = db.prepare('SELECT * FROM comments WHERE id = ? AND video_id = ?').get(parentId, v.id);
       if (!parent) throw bad('Reply target not found.');
+      if (isBlocked(req.user.id, parent.user_id)) throw new HttpError(403, "You can't reply to this comment.");
       if (parent.parent_id) parentId = parent.parent_id; // keep threads one level deep
     }
     const id = tx(db, () => {
@@ -460,7 +470,10 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     res.json({
       user: serializeUser(u),
       stats: { followers: s.followers, following: s.following, likes: s.likes, videos: s.videos },
-      viewer: { isMe: u.id === viewer, isFollowing: !!s.is_following, followsYou: !!s.follows_you },
+      viewer: {
+        isMe: u.id === viewer, isFollowing: !!s.is_following, followsYou: !!s.follows_you,
+        isBlocked: !!db.prepare('SELECT 1 FROM blocks WHERE blocker_id = ? AND blocked_id = ?').get(viewer, u.id),
+      },
     });
   });
 
@@ -500,6 +513,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   router.post('/users/:username/follow', requireAuth, (req, res) => {
     const u = mustUser(req.params.username);
     if (u.id === req.user.id) throw bad("You can't follow yourself.");
+    if (isBlocked(req.user.id, u.id)) throw new HttpError(403, "You can't follow this account.");
     const info = db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id, created_at) VALUES (?, ?, ?)').run(req.user.id, u.id, Date.now());
     if (info.changes) notify(u.id, req.user.id, 'follow');
     res.json({ following: true, followers: userStats(u.id, req.user.id).followers });
@@ -515,8 +529,66 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const viewer = viewerId(req);
     const rows = db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) AS followers FROM users u
       WHERE u.id <> :viewer AND u.id NOT IN (SELECT followee_id FROM follows WHERE follower_id = :viewer)
+        AND NOT ${BLOCKED_PAIR(':viewer', 'u.id')}
       ORDER BY followers DESC, u.created_at ASC LIMIT 8`).all({ viewer });
     res.json({ items: rows.map((r) => ({ ...serializeUser(r), followers: r.followers })) });
+  });
+
+  // ---------- blocking ----------
+  router.post('/users/:username/block', requireAuth, (req, res) => {
+    const u = mustUser(req.params.username);
+    if (u.id === req.user.id) throw bad("You can't block yourself.");
+    tx(db, () => {
+      db.prepare('INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)').run(req.user.id, u.id, Date.now());
+      // A block also ends any follow relationship in both directions.
+      db.prepare('DELETE FROM follows WHERE (follower_id = :a AND followee_id = :b) OR (follower_id = :b AND followee_id = :a)').run({ a: req.user.id, b: u.id });
+    });
+    res.json({ blocked: true });
+  });
+  router.delete('/users/:username/block', requireAuth, (req, res) => {
+    const u = mustUser(req.params.username);
+    db.prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?').run(req.user.id, u.id);
+    res.json({ blocked: false });
+  });
+  router.get('/me/blocks', requireAuth, (req, res) => {
+    const rows = db.prepare(`SELECT u.* FROM blocks b JOIN users u ON u.id = b.blocked_id
+      WHERE b.blocker_id = ? ORDER BY b.created_at DESC`).all(req.user.id);
+    res.json({ items: rows.map(serializeUser) });
+  });
+
+  // ---------- reports ----------
+  router.get('/reports/reasons', (_req, res) => res.json({ reasons: REPORT_REASONS }));
+
+  router.post('/reports', requireAuth, (req, res) => {
+    const type = String(req.body?.targetType || '');
+    const targetId = toInt(req.body?.targetId, 0, 0, Number.MAX_SAFE_INTEGER);
+    const reason = String(req.body?.reason || '');
+    const details = String(req.body?.details || '').trim().slice(0, 500);
+    if (!REPORT_REASONS.includes(reason)) throw bad('Choose a reason for this report.');
+    let ownerId;
+    let snapshot;
+    if (type === 'video') {
+      const v = mustVisibleVideo(targetId, req.user.id);
+      ownerId = v.author.id;
+      snapshot = v.caption;
+    } else if (type === 'comment') {
+      const c = db.prepare('SELECT * FROM comments WHERE id = ?').get(targetId);
+      if (!c) throw notFound('Comment not found');
+      mustVisibleVideo(c.video_id, req.user.id);
+      ownerId = c.user_id;
+      snapshot = c.body;
+    } else if (type === 'user') {
+      const u = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
+      if (!u) throw notFound('User not found');
+      ownerId = u.id;
+      snapshot = `@${u.username} - ${u.display_name}${u.bio ? ` - ${u.bio}` : ''}`;
+    } else {
+      throw bad('Unknown report type.');
+    }
+    if (ownerId === req.user.id) throw bad("You can't report your own content.");
+    const info = db.prepare(`INSERT OR IGNORE INTO reports (reporter_id, target_type, target_id, target_user_id, reason, details, snapshot, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(req.user.id, type, targetId, ownerId, reason, details, snapshot.slice(0, 500), Date.now());
+    res.status(info.changes ? 201 : 200).json({ ok: true, duplicate: !info.changes });
   });
 
   router.patch('/me', requireAuth, upload.single('avatar'), (req, res) => {
@@ -538,7 +610,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   function searchUsers(q, viewer, limit) {
     return db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) AS followers,
         EXISTS (SELECT 1 FROM follows WHERE follower_id = :viewer AND followee_id = u.id) AS is_following
-      FROM users u WHERE u.username LIKE :q ESCAPE '\\' OR u.display_name LIKE :q ESCAPE '\\'
+      FROM users u WHERE (u.username LIKE :q ESCAPE '\\' OR u.display_name LIKE :q ESCAPE '\\') AND NOT ${BLOCKED_PAIR(':viewer', 'u.id')}
       ORDER BY (u.username = :exact) DESC, followers DESC LIMIT :limit`)
       .all({ q: likeEscape(q), exact: q, viewer, limit })
       .map((r) => ({ ...serializeUser(r), followers: r.followers, isFollowing: !!r.is_following, isMe: r.id === viewer }));
@@ -573,7 +645,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
       return res.json({ items: trending.map((t) => ({ kind: 'hashtag', text: `#${t.name}` })) });
     }
     const tags = searchHashtags(q, 5).map((t) => ({ kind: 'hashtag', text: `#${t.name}` }));
-    const users = searchUsers(q, 0, 5).map((u) => ({ kind: 'user', text: u.username, displayName: u.displayName, avatarUrl: u.avatarUrl }));
+    const users = searchUsers(q, viewerId(req), 5).map((u) => ({ kind: 'user', text: u.username, displayName: u.displayName, avatarUrl: u.avatarUrl }));
     res.json({ items: [...users, ...tags].slice(0, 8) });
   });
 
@@ -593,7 +665,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const rows = db.prepare(`SELECT n.*, a.username, a.display_name, a.avatar_path, a.verified, v.cover_path, c.body AS comment_body
       FROM notifications n JOIN users a ON a.id = n.actor_id
       LEFT JOIN videos v ON v.id = n.video_id LEFT JOIN comments c ON c.id = n.comment_id
-      WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT 100`).all(req.user.id);
+      WHERE n.user_id = :me AND NOT ${BLOCKED_PAIR(':me', 'n.actor_id')} ORDER BY n.created_at DESC LIMIT 100`).all({ me: req.user.id });
     res.json({
       items: rows.map((r) => ({
         id: r.id, type: r.type, read: !!r.is_read, createdAt: r.created_at, videoId: r.video_id,

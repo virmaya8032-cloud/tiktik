@@ -110,6 +110,30 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS blocks (
+  blocker_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (blocker_id, blocked_id),
+  CHECK (blocker_id <> blocked_id)
+);
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id);
+CREATE TABLE IF NOT EXISTS reports (
+  id             INTEGER PRIMARY KEY,
+  reporter_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  target_type    TEXT NOT NULL CHECK (target_type IN ('video','comment','user')),
+  target_id      INTEGER NOT NULL,
+  target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reason         TEXT NOT NULL,
+  details        TEXT NOT NULL DEFAULT '',
+  snapshot       TEXT NOT NULL DEFAULT '',
+  status         TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','actioned','dismissed')),
+  created_at     INTEGER NOT NULL,
+  resolved_at    INTEGER,
+  resolved_by    INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open_once ON reports(reporter_id, target_type, target_id) WHERE status = 'open';
 `;
 
 export function openDatabase(file) {

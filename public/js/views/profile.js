@@ -5,6 +5,8 @@ import { videoGrid } from '../components/grid.js';
 import { toggleFollow } from '../components/player.js';
 import { userRow } from './discover.js';
 import { refresh } from '../router.js';
+import { openReportDialog } from '../components/report.js';
+import { ensureLogin } from '../components/auth.js';
 
 export async function profileView({ params, query }) {
   const data = await api.get(`/api/users/${encodeURIComponent(params.username)}`);
@@ -40,10 +42,23 @@ export async function profileView({ params, query }) {
     if (viewer.isMe) {
       actions.replaceChildren(el(html`<div class="btn-row"><button class="btn btn-primary p-edit">Edit profile</button><a class="btn" href="/studio">Creator studio</a><button class="btn icon-only p-share" aria-label="Share profile">${icons.link}</button></div>`));
       $('.p-edit', actions).addEventListener('click', () => editProfile(user));
+    } else if (viewer.isBlocked) {
+      actions.replaceChildren(el(html`<div class="btn-row">
+        <button class="btn btn-primary p-unblock">Unblock</button>
+        <button class="btn icon-only p-share" aria-label="Share profile">${icons.link}</button></div>`));
+      $('.p-unblock', actions).addEventListener('click', async () => {
+        try {
+          await api.del(`/api/users/${user.username}/block`);
+          toast(`@${user.username} unblocked`, 'success');
+          refresh();
+        } catch (ex) { toast(ex.message, 'error'); }
+      });
     } else {
       actions.replaceChildren(el(html`<div class="btn-row">
         <button class="btn ${viewer.isFollowing ? '' : 'btn-primary'} p-follow">${viewer.isFollowing ? 'Following' : viewer.followsYou ? 'Follow back' : 'Follow'}</button>
-        <button class="btn icon-only p-share" aria-label="Share profile">${icons.link}</button></div>`));
+        <button class="btn icon-only p-share" aria-label="Share profile">${icons.link}</button>
+        <button class="btn icon-only p-more" aria-label="More options">${icons.more}</button></div>`));
+      $('.p-more', actions).addEventListener('click', () => profileMenu(user));
       $('.p-follow', actions).addEventListener('click', async () => {
         try {
           const res = await toggleFollow(user.username, viewer.isFollowing);
@@ -73,6 +88,10 @@ export async function profileView({ params, query }) {
   }
 
   const gridBox = $('.p-grid', root);
+  if (viewer.isBlocked) {
+    gridBox.append(el(html`<div class="empty-state"><h2>You blocked @${user.username}</h2><p class="muted">You won't see their videos or comments, and they can't interact with you. Unblock to see them again.</p></div>`));
+    return { el: root };
+  }
   try {
     const { items } = await api.get(`/api/users/${user.username}/videos?tab=${tab}`);
     if (!items.length) {
@@ -88,6 +107,56 @@ export async function profileView({ params, query }) {
   return { el: root };
 }
 
+/** Report or block another account. */
+function profileMenu(user) {
+  const box = el(html`<div class="menu-list">
+    <button class="menu-item pm-report">${icons.flag} Report account</button>
+    <button class="menu-item btn-danger pm-block">${icons.block} Block @${user.username}</button>
+  </div>`);
+  const m = modal(box, { title: `@${user.username}` });
+  $('.pm-report', box).addEventListener('click', () => { m.close(); openReportDialog({ type: 'user', id: user.id, label: 'account' }); });
+  $('.pm-block', box).addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    if (!(await ensureLogin())) return;
+    if (btn.dataset.armed !== '1') {
+      btn.dataset.armed = '1';
+      btn.textContent = `Confirm: block @${user.username}? They won't be told.`;
+      return;
+    }
+    try {
+      await api.post(`/api/users/${user.username}/block`);
+      m.close();
+      toast(`@${user.username} blocked`, 'success');
+      refresh();
+    } catch (ex) { toast(ex.message, 'error'); }
+  });
+}
+
+async function blockedAccounts() {
+  const box = el('<div class="user-list"><div class="spinner" aria-label="Loading"></div></div>');
+  modal(box, { title: 'Blocked accounts' });
+  try {
+    const { items } = await api.get('/api/me/blocks');
+    if (!items.length) { box.replaceChildren(el('<p class="empty small">You haven\'t blocked anyone.</p>')); return; }
+    box.replaceChildren(...items.map((u) => {
+      const row = el(html`<div class="user-row">
+        <a href="/@${u.username}" class="user-row-main">${avatar(u, 52)}
+          <span><strong>${u.displayName}</strong><small>@${u.username}</small></span></a>
+        <button class="btn btn-sm b-unblock">Unblock</button>
+      </div>`);
+      hydrateAvatars(row);
+      $('.b-unblock', row).addEventListener('click', async () => {
+        try {
+          await api.del(`/api/users/${u.username}/block`);
+          row.remove();
+          toast(`@${u.username} unblocked`, 'success');
+        } catch (ex) { toast(ex.message, 'error'); }
+      });
+      return row;
+    }));
+  } catch (ex) { box.replaceChildren(el(html`<p class="empty small">${ex.message}</p>`)); }
+}
+
 function editProfile(user) {
   const form = el(html`<form class="form edit-profile">
     <div class="ep-avatar">
@@ -98,6 +167,10 @@ function editProfile(user) {
     <label class="field"><span>Bio <small class="muted bio-count"></small></span><textarea name="bio" maxlength="160" rows="3">${user.bio}</textarea></label>
     <p class="form-error" role="alert" hidden></p>
     <div class="btn-row end"><button type="button" class="btn ep-cancel">Cancel</button><button class="btn btn-primary">Save</button></div>
+    <div class="ep-account">
+      <h3>Privacy and safety</h3>
+      <button type="button" class="link-btn ep-blocks">Blocked accounts</button>
+    </div>
   </form>`);
   hydrateAvatars(form);
   const m = modal(form, { title: 'Edit profile' });
@@ -114,6 +187,7 @@ function editProfile(user) {
     $('.ep-preview', form).replaceChildren(img);
   });
   $('.ep-cancel', form).addEventListener('click', () => m.close());
+  $('.ep-blocks', form).addEventListener('click', () => { m.close(); blockedAccounts(); });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);

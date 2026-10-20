@@ -12,7 +12,7 @@
     "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
     "set-password": "node --disable-warning=ExperimentalWarning scripts/set-password.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/api.test.js",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
     "e2e": "node --disable-warning=ExperimentalWarning test/e2e.js"
   },
   "dependencies": {

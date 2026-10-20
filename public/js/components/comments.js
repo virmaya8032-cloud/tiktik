@@ -2,6 +2,7 @@ import { api, store } from '../api.js';
 import { html, el, $, $$, avatar, hydrateAvatars, richText, timeAgo, fmtCount, toast } from '../ui.js';
 import { icons } from '../icons.js';
 import { ensureLogin } from './auth.js';
+import { openReportDialog } from './report.js';
 
 /**
  * Comment thread for one video. Returns an element; calls onCount(n) whenever
@@ -58,6 +59,7 @@ export function commentsPanel(video, { onCount, onClose } = {}) {
           <span>${timeAgo(c.createdAt)}</span>
           <button class="link-btn c-reply">Reply</button>
           ${canDelete ? html`<button class="link-btn c-del">Delete</button>` : ''}
+          ${c.isMine ? '' : html`<button class="link-btn c-report">Report</button>`}
         </div>
         ${!isReply && c.replyCount ? html`<button class="link-btn c-more">View ${c.replyCount} ${c.replyCount === 1 ? 'reply' : 'replies'}</button>` : ''}
         <div class="c-replies"></div>
@@ -78,6 +80,7 @@ export function commentsPanel(video, { onCount, onClose } = {}) {
         $('span', btn).textContent = fmtCount(c.likes);
       } catch (ex) { toast(ex.message, 'error'); }
     });
+    own('.c-report')?.addEventListener('click', () => openReportDialog({ type: 'comment', id: c.id, label: 'comment' }));
     own('.c-del')?.addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'Confirm delete'; return; }
