@@ -10,6 +10,8 @@ services:
       PUBLIC_URL: https://${DOMAIN}       # base of password-reset links
       SMTP_URL: ${SMTP_URL:-}             # optional: email reset links (also add nodemailer to package.json)
       MAIL_FROM: ${MAIL_FROM:-}
+      BACKUP_HOURS: ${BACKUP_HOURS:-24}   # automatic database backups in data/backups (0 = off)
+      BACKUP_KEEP: ${BACKUP_KEEP:-7}
     volumes:
       - ../data:/app/data               # database + uploaded videos (kept across updates)
   caddy:

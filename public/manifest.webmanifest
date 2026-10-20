@@ -3,16 +3,29 @@
   "name": "TikTik",
   "short_name": "TikTik",
   "description": "Watch, create and share short vertical videos.",
+  "lang": "en",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",
+  "categories": ["entertainment", "social", "video"],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ],
+  "shortcuts": [
+    { "name": "Upload a video", "short_name": "Upload", "url": "/upload", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Explore", "short_name": "Explore", "url": "/explore", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Activity", "short_name": "Activity", "url": "/inbox", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "screenshots": [
+    { "src": "/screenshots/phone-feed.jpg", "sizes": "540x1170", "type": "image/jpeg", "form_factor": "narrow", "label": "Full-screen vertical video feed" },
+    { "src": "/screenshots/phone-explore.jpg", "sizes": "540x1170", "type": "image/jpeg", "form_factor": "narrow", "label": "Explore videos by category" },
+    { "src": "/screenshots/desktop-feed.jpg", "sizes": "1280x800", "type": "image/jpeg", "form_factor": "wide", "label": "TikTik on a computer" }
   ]
 }

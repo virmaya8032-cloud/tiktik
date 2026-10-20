@@ -5,6 +5,7 @@ import { openDatabase } from './db.js';
 import { sessionMiddleware } from './auth.js';
 import { createApi } from './api.js';
 import { createMailer } from './mailer.js';
+import { startMaintenance } from './maintenance.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -31,6 +32,16 @@ export function createApp({
     next();
   });
 
+  // Liveness probe for Docker / uptime monitors: the process is up and the database answers.
+  app.get('/healthz', (_req, res) => {
+    try {
+      db.prepare('SELECT 1').get();
+      res.json({ ok: true });
+    } catch {
+      res.status(503).json({ ok: false });
+    }
+  });
+
   app.use(express.json({ limit: '64kb' }));
   app.use(sessionMiddleware(db));
   app.use('/api', createApi({ db, uploadDir, inviteCode, mailer, publicUrl }));
@@ -52,6 +63,12 @@ export function createApp({
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.HOST || '127.0.0.1';
-  const { app } = createApp();
+  const { app, db } = createApp();
+  // BACKUP_HOURS=0 turns automatic backups off; BACKUP_KEEP is how many daily copies to keep.
+  startMaintenance(db, {
+    backupDir: process.env.BACKUP_DIR || path.join(ROOT, 'data', 'backups'),
+    backupHours: process.env.BACKUP_HOURS !== undefined ? Number(process.env.BACKUP_HOURS) : 24,
+    keep: Number(process.env.BACKUP_KEEP) || 7,
+  });
   app.listen(port, host, () => console.log(`TikTik running at http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`));
 }

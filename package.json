@@ -13,6 +13,7 @@
     "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
     "set-password": "node --disable-warning=ExperimentalWarning scripts/set-password.js",
     "set-admin": "node --disable-warning=ExperimentalWarning scripts/set-admin.js",
+    "backup": "node --disable-warning=ExperimentalWarning scripts/backup.js",
     "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.js\"",
     "e2e": "node --disable-warning=ExperimentalWarning test/e2e.js"
   },
