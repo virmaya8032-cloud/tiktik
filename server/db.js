@@ -144,6 +144,15 @@ CREATE TABLE IF NOT EXISTS moderation_log (
   created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_modlog_time ON moderation_log(created_at DESC);
+CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  expires_at INTEGER NOT NULL,
+  used_at    INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id);
 `;
 
 // Columns added after the first release. ALTER TABLE ADD COLUMN keeps existing rows and data.
@@ -153,6 +162,7 @@ const ADDED_COLUMNS = [
   ['users', 'suspended_reason', "TEXT NOT NULL DEFAULT ''"],
   ['videos', 'hidden_at', 'INTEGER'],
   ['comments', 'hidden_at', 'INTEGER'],
+  ['users', 'email', 'TEXT'],
 ];
 
 function migrate(db) {
@@ -160,6 +170,7 @@ function migrate(db) {
     const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
     if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email COLLATE NOCASE) WHERE email IS NOT NULL');
 }
 
 export function openDatabase(file) {

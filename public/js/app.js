@@ -11,6 +11,7 @@ import { uploadView, studioView, loginView } from './views/upload.js';
 import { friendsView } from './views/friends.js';
 import { infoView, TERMS_LINKS } from './views/info.js';
 import { adminView } from './views/admin.js';
+import { resetView } from './views/reset.js';
 
 route('/', (ctx) => feedView({ ...ctx, kind: 'foryou' }));
 route('/following', (ctx) => feedView({ ...ctx, kind: 'following' }));
@@ -24,6 +25,7 @@ route('/studio', studioView);
 route('/inbox', inboxView);
 route('/login', loginView);
 route('/admin', adminView);
+route('/reset-password', resetView);
 route('/@:username', profileView);
 route('/@:username/video/:id', videoView);
 

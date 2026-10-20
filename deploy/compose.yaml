@@ -7,6 +7,9 @@ services:
     environment:
       TRUST_PROXY: uniquelocal          # trust Caddy (private Docker network) for client IP + https
       INVITE_CODE: ${INVITE_CODE:?Set INVITE_CODE in .env}
+      PUBLIC_URL: https://${DOMAIN}       # base of password-reset links
+      SMTP_URL: ${SMTP_URL:-}             # optional: email reset links (also add nodemailer to package.json)
+      MAIL_FROM: ${MAIL_FROM:-}
     volumes:
       - ../data:/app/data               # database + uploaded videos (kept across updates)
   caddy:

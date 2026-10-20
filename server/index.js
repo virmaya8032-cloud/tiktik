@@ -4,10 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { openDatabase } from './db.js';
 import { sessionMiddleware } from './auth.js';
 import { createApi } from './api.js';
+import { createMailer } from './mailer.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-export function createApp({ dbFile = path.join(ROOT, 'data', 'clipwave.db'), uploadDir = path.join(ROOT, 'data', 'uploads'), inviteCode = process.env.INVITE_CODE || '' } = {}) {
+export function createApp({
+  dbFile = path.join(ROOT, 'data', 'clipwave.db'),
+  uploadDir = path.join(ROOT, 'data', 'uploads'),
+  inviteCode = process.env.INVITE_CODE || '',
+  mailer = createMailer(),
+  publicUrl = process.env.PUBLIC_URL || '',
+} = {}) {
   const db = openDatabase(dbFile);
   const app = express();
   app.disable('x-powered-by');
@@ -26,7 +33,7 @@ export function createApp({ dbFile = path.join(ROOT, 'data', 'clipwave.db'), upl
 
   app.use(express.json({ limit: '64kb' }));
   app.use(sessionMiddleware(db));
-  app.use('/api', createApi({ db, uploadDir, inviteCode }));
+  app.use('/api', createApi({ db, uploadDir, inviteCode, mailer, publicUrl }));
   // Media is served with HTTP Range support (express.static) so the player can seek.
   app.use('/media', express.static(uploadDir, { maxAge: '7d', immutable: true, fallthrough: false }));
   app.use(express.static(path.join(ROOT, 'public'), { index: false, maxAge: 0 }));

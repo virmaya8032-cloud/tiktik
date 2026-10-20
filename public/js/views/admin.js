@@ -1,5 +1,5 @@
 import { api, store } from '../api.js';
-import { html, el, $, $$, fmtCount, timeAgo, toast, modal } from '../ui.js';
+import { html, el, $, $$, fmtCount, timeAgo, toast, modal, copyText } from '../ui.js';
 import { refresh } from '../router.js';
 import { loginRequired } from './upload.js';
 
@@ -11,8 +11,9 @@ const ACTION_LABELS = {
   hide_video: 'Hid video', unhide_video: 'Restored video', delete_video: 'Deleted video',
   hide_comment: 'Hid comment', unhide_comment: 'Restored comment', delete_comment: 'Deleted comment',
   suspend_user: 'Suspended account', unsuspend_user: 'Lifted suspension', dismiss_reports: 'Dismissed reports',
+  reset_link: 'Created password reset link',
 };
-const TABS = [['open', 'Open reports'], ['actioned', 'Actioned'], ['dismissed', 'Dismissed'], ['suspended', 'Suspended accounts'], ['log', 'Activity log']];
+const TABS = [['open', 'Open reports'], ['actioned', 'Actioned'], ['dismissed', 'Dismissed'], ['suspended', 'Suspended accounts'], ['tools', 'Account tools'], ['log', 'Activity log']];
 
 /** Moderation panel for admins: report queue, content actions, suspensions and the audit log. */
 export async function adminView({ query }) {
@@ -36,6 +37,7 @@ export async function adminView({ query }) {
   const body = $('.admin-body', root);
   try {
     if (tab === 'suspended') await renderSuspended(body);
+    else if (tab === 'tools') renderTools(body);
     else if (tab === 'log') await renderLog(body);
     else await renderReports(body, tab);
   } catch (ex) {
@@ -154,6 +156,42 @@ async function renderSuspended(body) {
     list.append(row);
   }
   body.replaceChildren(list);
+}
+
+function renderTools(body) {
+  const box = el(html`<section class="admin-tools">
+    <h2>Password reset link</h2>
+    <p class="muted small">For someone who forgot their password and has no email on their account. The link works once, for 30 minutes.
+      Send it to them privately - anyone with the link can set the password.</p>
+    <form class="form reset-form">
+      <label class="field"><span>Username</span><input name="username" required autocapitalize="off" spellcheck="false" placeholder="e.g. sunny.days"></label>
+      <p class="form-error" role="alert" hidden></p>
+      <div class="btn-row"><button class="btn btn-primary">Create reset link</button></div>
+    </form>
+    <div class="reset-link-box" hidden>
+      <label class="field"><span class="rl-label"></span><input readonly class="rl-url"></label>
+      <div class="btn-row"><button type="button" class="btn btn-sm rl-copy">Copy link</button><small class="muted rl-exp"></small></div>
+    </div>
+  </section>`);
+  const form = $('.reset-form', box);
+  const out = $('.reset-link-box', box);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('.form-error', form);
+    err.hidden = true;
+    try {
+      const r = await api.post('/api/admin/reset-link', { username: form.username.value });
+      $('.rl-label', out).textContent = `Reset link for @${r.username}`;
+      $('.rl-url', out).value = r.url;
+      $('.rl-exp', out).textContent = `Expires at ${new Date(r.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      out.hidden = false;
+      $('.rl-url', out).select();
+    } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+  });
+  $('.rl-copy', out).addEventListener('click', async () => {
+    if (await copyText($('.rl-url', out).value)) toast('Link copied', 'success');
+  });
+  body.replaceChildren(box);
 }
 
 async function renderLog(body) {

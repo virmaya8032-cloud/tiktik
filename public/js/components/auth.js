@@ -19,9 +19,18 @@ export function authForm({ mode = 'login', step = 'form', onDone } = {}) {
       <label class="field"><span>Password</span><input name="password" type="password" required minlength="8" autocomplete="current-password" placeholder="At least 8 characters"></label>
       <label class="field reg-only invite-field" hidden><span>Invite code</span><input name="inviteCode" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Ask the group owner for the code"></label>
       <p class="form-error" role="alert" hidden></p>
+      <button type="button" class="link-btn login-only auth-forgot-link">Forgot password?</button>
       <button class="btn btn-primary btn-block" type="submit"></button>
       <p class="muted small reg-only">Usernames use letters, numbers, "_" or "." (3-24 characters).</p>
       <p class="muted small login-only demo-hint">New here? Try the demo account <strong>demo</strong> / <strong>demo12345</strong> after seeding.</p>
+    </form>
+    <form class="form auth-forgot" novalidate>
+      <p class="muted small">Enter your username or the email on your account. If the account has an email address, we'll send a reset link that works for 30 minutes.</p>
+      <label class="field"><span>Username or email</span><input name="login" required autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+      <p class="form-error" role="alert" hidden></p>
+      <p class="form-ok small" role="status" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+      <button type="button" class="link-btn auth-forgot-back">← Back to log in</button>
     </form>
     <p class="auth-legal">By continuing, you agree to TikTik's <a href="/info/terms">Terms of Service</a> and confirm that you have read TikTik's <a href="/info/privacy">Privacy Policy</a>.</p>
     <div class="auth-switch">
@@ -59,6 +68,30 @@ export function authForm({ mode = 'login', step = 'form', onDone } = {}) {
     if (c.inviteRequired) $('.demo-hint', root).remove();
   });
   if (step === 'form') $('.auth-back', root).remove(); // inline pages only have one way in
+
+  // Forgot password: a third step inside the same box (no stacked modal).
+  const forgot = $('.auth-forgot', root);
+  $('.auth-forgot-link', root).addEventListener('click', () => {
+    forgot.login.value = form.username.value;
+    root.dataset.step = 'forgot';
+    forgot.login.focus();
+  });
+  $('.auth-forgot-back', root).addEventListener('click', () => setStep('form'));
+  forgot.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const ferr = $('.form-error', forgot);
+    const fok = $('.form-ok', forgot);
+    ferr.hidden = true; fok.hidden = true;
+    try {
+      const { emailEnabled } = await api.post('/api/auth/forgot', { login: forgot.login.value });
+      fok.textContent = emailEnabled
+        ? 'If that account has an email address, a reset link is on its way. Check your inbox (and spam folder).'
+        : 'Email reset is not set up on this server. Ask a moderator of your group for a reset link.';
+      fok.hidden = false;
+    } catch (ex) {
+      ferr.textContent = ex.message; ferr.hidden = false;
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

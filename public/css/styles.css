@@ -421,6 +421,7 @@ button.p-stat:hover { color: var(--text); }
 .auth-opt:hover { filter: brightness(1.15); }
 .auth-opt svg { position: absolute; left: 20px; width: 24px; height: 24px; }
 .auth[data-step=choose] .auth-form, .auth[data-step=form] .auth-choose { display: none; }
+.auth:not([data-step=forgot]) .auth-forgot, .auth[data-step=forgot] .auth-form, .auth[data-step=forgot] .auth-choose, .auth[data-step=forgot] .auth-switch { display: none; }
 .auth-back { justify-self: start; }
 .auth-legal { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 12.5px; }
 .auth-legal a { color: var(--text); font-weight: 700; }
@@ -577,3 +578,10 @@ button.p-stat:hover { color: var(--text); }
 .delete-account ul { padding-left: 20px; color: var(--muted); display: grid; gap: 4px; }
 .check-row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
 .check-row input { accent-color: var(--brand); width: 18px; height: 18px; }
+
+/* Password reset */
+.auth-forgot-link { justify-self: start; }
+.form-ok { margin: 0; padding: 10px 12px; border-radius: 10px; background: rgba(34, 197, 94, .14); color: var(--text); }
+.reset-link-box { display: grid; gap: 8px; margin-top: 14px; }
+.reset-link-box input { font-family: ui-monospace, monospace; font-size: 13px; }
+.admin-tools { max-width: 560px; display: grid; gap: 14px; }

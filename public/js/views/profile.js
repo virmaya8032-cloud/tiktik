@@ -200,6 +200,8 @@ function editProfile(user) {
     </div>
     <label class="field"><span>Name</span><input name="displayName" maxlength="40" required value="${user.displayName}"></label>
     <label class="field"><span>Bio <small class="muted bio-count"></small></span><textarea name="bio" maxlength="160" rows="3">${user.bio}</textarea></label>
+    <label class="field"><span>Email <small class="muted">optional, private - only used to reset your password</small></span>
+      <input name="email" type="email" maxlength="254" autocomplete="email" value="${store.me?.email || ''}"></label>
     <p class="form-error" role="alert" hidden></p>
     <div class="btn-row end"><button type="button" class="btn ep-cancel">Cancel</button><button class="btn btn-primary">Save</button></div>
     <div class="ep-account">

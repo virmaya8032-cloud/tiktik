@@ -92,5 +92,6 @@ Range-capable media serving, and a strict Content-Security-Policy. See
 ## Not implemented (out of scope)
 
 LIVE streaming, gifts/coins, direct messages, duets/stitches, effects,
-server-side transcoding/HLS, content moderation/reporting, OAuth/social
-login and password reset. The architecture doc notes how each would fit.
+server-side transcoding/HLS, OAuth/social
+login. The architecture doc notes how each would fit. (Reporting, blocking,
+moderation, account deletion and password reset were added in fasa 1.)

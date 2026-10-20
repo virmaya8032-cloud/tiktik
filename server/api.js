@@ -11,6 +11,8 @@ export const CATEGORIES = ['comedy', 'music', 'dance', 'food', 'sports', 'travel
 const USERNAME_RE = /^[a-z0-9_.]{3,24}$/i;
 const HASHTAG_RE = /#([\p{L}\p{N}_]{1,50})/gu;
 const MENTION_RE = /@([a-z0-9_.]{3,24})/gi;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const RESET_TTL_MS = 30 * 60 * 1000;
 const VIDEO_MIME = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 const IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const REPORT_REASONS = ['spam', 'harassment', 'hate', 'violence', 'sexual', 'minor_safety', 'self_harm', 'misinformation', 'intellectual_property', 'other'];
@@ -32,7 +34,7 @@ const toInt = (v, def, min, max) => {
   return Math.min(max, Math.max(min, n));
 };
 
-export function createApi({ db, uploadDir, inviteCode = '' }) {
+export function createApi({ db, uploadDir, inviteCode = '', mailer = null, publicUrl = '' }) {
   const router = express.Router();
   for (const sub of ['videos', 'covers', 'avatars']) fs.mkdirSync(path.join(uploadDir, sub), { recursive: true });
 
@@ -189,6 +191,17 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     }
   }
 
+  /** '' clears the address (null); anything else must look like an email and not belong to someone else. */
+  function cleanEmail(raw, userId = 0) {
+    const email = String(raw ?? '').trim().slice(0, 254);
+    if (!email) return null;
+    if (!EMAIL_RE.test(email)) throw bad('Enter a valid email address.');
+    if (db.prepare('SELECT 1 FROM users WHERE email = ? COLLATE NOCASE AND id <> ?').get(email, userId)) {
+      throw new HttpError(409, 'That email address is already used by another account.');
+    }
+    return email;
+  }
+
   // ---------- auth ----------
   // Private-group mode: when INVITE_CODE is set, sign-up requires it.
   router.get('/auth/config', (_req, res) => res.json({ inviteRequired: !!inviteCode }));
@@ -205,8 +218,9 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     if (!USERNAME_RE.test(username)) throw bad('Username must be 3-24 characters: letters, numbers, _ or .');
     if (password.length < 8) throw bad('Password must be at least 8 characters.');
     if (findUser.get(username)) throw new HttpError(409, 'That username is taken.');
-    const info = db.prepare(`INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)`)
-      .run(username, displayName || username, hashPassword(password), Date.now());
+    const email = cleanEmail(req.body?.email);
+    const info = db.prepare(`INSERT INTO users (username, display_name, password_hash, email, created_at) VALUES (?, ?, ?, ?, ?)`)
+      .run(username, displayName || username, hashPassword(password), email, Date.now());
     createSession(db, res, Number(info.lastInsertRowid));
     res.status(201).json({ user: serializeUser(findUser.get(username)) });
   });
@@ -229,7 +243,63 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   router.get('/auth/me', (req, res) => {
     if (!req.user) return res.json({ user: null });
     const unread = db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND is_read = 0').get(req.user.id).n;
-    res.json({ user: { ...serializeUser(req.user), isAdmin: req.user.role === 'admin' }, unreadNotifications: unread });
+    res.json({ user: { ...serializeUser(req.user), isAdmin: req.user.role === 'admin', email: req.user.email || '' }, unreadNotifications: unread });
+  });
+
+  // ---------- password reset ----------
+  // Tokens are random, single-use and expire after 30 minutes; only their SHA-256 hash is stored.
+  const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+  function issueReset(userId, createdBy = null) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const now = Date.now();
+    tx(db, () => {
+      db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(userId); // one live link per account
+      db.prepare('INSERT INTO password_resets (token_hash, user_id, created_by, expires_at, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(hashToken(token), userId, createdBy, now + RESET_TTL_MS, now);
+    });
+    return { token, expiresAt: now + RESET_TTL_MS };
+  }
+  function findReset(token) {
+    return db.prepare(`SELECT r.*, u.username FROM password_resets r JOIN users u ON u.id = r.user_id
+      WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > ?`).get(hashToken(token), Date.now());
+  }
+  const resetUrl = (req, token) => `${publicUrl || `${req.protocol}://${req.get('host')}`}/reset-password?token=${token}`;
+
+  router.post('/auth/forgot', authLimit, (req, res) => {
+    const login = String(req.body?.login || '').trim();
+    if (!login) throw bad('Enter your username or email.');
+    const u = db.prepare('SELECT * FROM users WHERE username = ? OR email = ? COLLATE NOCASE').get(login, login);
+    if (u?.email && mailer) {
+      const { token } = issueReset(u.id);
+      // Not awaited: the reply must not reveal (by timing) whether an account matched.
+      mailer.send({
+        to: u.email,
+        subject: 'Reset your TikTik password',
+        text: `Hi ${u.display_name},\n\nUse this link within 30 minutes to choose a new password:\n${resetUrl(req, token)}\n\nIf you didn't ask for this, you can ignore this email.`,
+      }).catch((err) => console.error('password reset email failed:', err.message));
+    }
+    // The same answer whether or not the account exists.
+    res.json({ ok: true, emailEnabled: !!mailer });
+  });
+
+  router.get('/auth/reset/:token', (req, res) => {
+    const r = findReset(req.params.token);
+    if (!r) throw notFound('This reset link is invalid or has expired.');
+    res.json({ valid: true, username: r.username, expiresAt: r.expires_at });
+  });
+
+  router.post('/auth/reset', authLimit, (req, res) => {
+    const r = findReset(req.body?.token);
+    if (!r) throw notFound('This reset link is invalid or has expired.');
+    const password = String(req.body?.password || '');
+    if (password.length < 8) throw bad('Password must be at least 8 characters.');
+    tx(db, () => {
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(password), r.user_id);
+      db.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ?').run(Date.now(), r.token_hash);
+      db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(r.user_id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(r.user_id); // log out every device
+    });
+    res.json({ ok: true, username: r.username });
   });
 
   router.get('/categories', (_req, res) => res.json({ categories: CATEGORIES }));
@@ -607,12 +677,13 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const displayName = req.body.displayName !== undefined ? String(req.body.displayName).trim().slice(0, 40) : req.user.display_name;
     const bio = req.body.bio !== undefined ? String(req.body.bio).slice(0, 160) : req.user.bio;
     if (!displayName) throw bad('Name cannot be empty.');
+    const email = req.body.email !== undefined ? cleanEmail(req.body.email, req.user.id) : req.user.email;
     let avatar = req.user.avatar_path;
     if (req.file) {
       if (avatar) fs.rm(path.join(uploadDir, avatar), { force: true }, () => {});
       avatar = path.relative(uploadDir, req.file.path).replace(/\\/g, '/');
     }
-    db.prepare('UPDATE users SET display_name = ?, bio = ?, avatar_path = ? WHERE id = ?').run(displayName, bio, avatar, req.user.id);
+    db.prepare('UPDATE users SET display_name = ?, bio = ?, avatar_path = ?, email = ? WHERE id = ?').run(displayName, bio, avatar, email ?? null, req.user.id);
     res.json({ user: serializeUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)) });
   });
 
@@ -837,6 +908,15 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   router.get('/admin/users', requireAdmin, (_req, res) => {
     const rows = db.prepare('SELECT * FROM users WHERE suspended_at IS NOT NULL ORDER BY suspended_at DESC LIMIT 200').all();
     res.json({ items: rows.map((u) => ({ ...serializeUser(u), suspendedAt: u.suspended_at, suspendedReason: u.suspended_reason })) });
+  });
+
+  // A one-time reset link a moderator hands to someone who cannot use email reset.
+  router.post('/admin/reset-link', requireAdmin, (req, res) => {
+    const u = findUser.get(String(req.body?.username || '').trim().replace(/^@/, ''));
+    if (!u) throw notFound('User not found');
+    const { token, expiresAt } = issueReset(u.id, req.user.id);
+    moderate(req, 'reset_link', 'user', u.id, '', null);
+    res.json({ username: u.username, url: resetUrl(req, token), expiresAt });
   });
 
   router.get('/admin/log', requireAdmin, (_req, res) => {

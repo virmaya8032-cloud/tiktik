@@ -51,7 +51,7 @@ export function destroySession(db, req, res) {
 /** Express middleware: attaches req.user (or null) from the session cookie. */
 export function sessionMiddleware(db) {
   const find = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.bio, u.avatar_path, u.verified, u.role, u.suspended_at, s.expires_at
+    SELECT u.id, u.username, u.display_name, u.bio, u.avatar_path, u.verified, u.role, u.suspended_at, u.email, s.expires_at
     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`);
   const drop = db.prepare('DELETE FROM sessions WHERE token = ?');
   return (req, _res, next) => {

@@ -30,7 +30,9 @@ use the password `clipwave123`. You can also sign up a new account.
 | `npm start` | Start the server (set `PORT` / `HOST` to change; default 127.0.0.1:3000) |
 | `npm run dev` | Start with auto-restart on server file changes |
 | `npm run seed -- --reset` | Wipe `data/` and regenerate the demo content |
-| `npm test` | API integration tests (15) |
+| `npm test` | API integration tests (`test/*.test.js`) |
+| `npm run set-admin -- <username>` | Make an account a moderator (`--remove` to undo, `--list` to list) |
+| `npm run set-password -- <username> <password>` | Set a password from the command line |
 | `npm run e2e` | Browser end-to-end tests (22 steps; screenshots go to `test/artifacts/`) |
 
 ## Features
@@ -52,6 +54,16 @@ use the password `clipwave123`. You can also sign up a new account.
   delete controls
 - Activity inbox for likes, comments, replies, mentions and follows
 - Responsive desktop, tablet and mobile layouts, plus dark and light themes
+- Safety: report videos, comments and accounts; block accounts (two-way:
+  videos, comments, search and notifications are hidden)
+- Moderation panel at `/admin` for moderators: report queue with video
+  preview, hide/restore/delete content, suspend accounts, audit log
+- Delete account (password confirmed): removes videos, media files,
+  comments, likes, follows and sessions
+- Password reset with single-use links that expire after 30 minutes.
+  Moderators create links in Moderation → Account tools. Email links are
+  optional: set `SMTP_URL` (and `npm install nodemailer`), `MAIL_FROM`
+  and `PUBLIC_URL`; `MAIL_LOG=1` prints emails to the console in development
 
 ## Documentation
 
