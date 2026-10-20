@@ -135,9 +135,11 @@ docker compose up -d --build
 Kali pertama mengambil 2–5 minit. Semak:
 
 ```bash
-docker compose ps          # kedua-dua "app" dan "caddy" mesti "running"
+docker compose ps          # "app" mesti "running (healthy)" dan "caddy" mesti "running"
 docker compose logs caddy | grep -i certificate   # sijil HTTPS diperoleh
 ```
+
+Jika `app` menunjukkan `unhealthy`, lihat sebabnya dengan `docker compose logs app`.
 
 Buka di pelayar: **`https://129-150-10-20.sslip.io`** (guna alamat anda). 🎉
 
@@ -159,7 +161,24 @@ docker compose exec app node scripts/set-password.js demo KataLaluanBaharu123
 
 > Bio akaun `demo` masih menyebut kata laluan lama. Log masuk sebagai `demo` dan kemas kini bio di halaman profil.
 
-## Langkah 10 – Kongsi dengan kawan-kawan
+## Langkah 10 – Lantik moderator (admin)
+
+Moderator boleh membuka panel **Moderation** (`/admin`): menyemak laporan, menyembunyikan atau memadam
+kandungan, menggantung akaun, dan menjana pautan reset kata laluan. Daftar akaun anda sendiri di laman
+dahulu, kemudian:
+
+```bash
+cd ~/clipwave/deploy
+docker compose exec app node scripts/set-admin.js NAMA_PENGGUNA_ANDA
+docker compose exec app node scripts/set-admin.js --list      # semak senarai admin
+```
+
+Log keluar dan masuk semula; menu **Moderation** akan muncul di sebelah kiri (di telefon: menu **More**).
+
+**Kawan lupa kata laluan?** Moderation → **Account tools** → taip nama pengguna → **Create reset link**.
+Hantar pautan itu kepada kawan secara peribadi (contoh WhatsApp). Pautan berfungsi sekali sahaja, selama 30 minit.
+
+## Langkah 11 – Kongsi dengan kawan-kawan
 
 Hantar kepada kawan:
 1. Pautan: `https://129-150-10-20.sslip.io`
@@ -179,16 +198,51 @@ Ikon TikTik akan muncul di skrin utama dan dibuka skrin penuh seperti aplikasi b
 muat naik (Langkah 6, fail server sahaja), kemudian di pelayan:
 
 ```bash
+cd ~/clipwave/deploy && docker compose exec app node scripts/backup.js   # backup dahulu
 cd ~ && tar -xzf tiktik-server.tar.gz && cd ~/clipwave/deploy && docker compose up -d --build
 ```
 
-Folder `~/clipwave/data` (akaun + video) **tidak** disentuh oleh kemas kini.
+Folder `~/clipwave/data` (akaun + video) **tidak** disentuh oleh kemas kini. Jika versi baharu menambah
+lajur pangkalan data, ia ditambah secara automatik semasa aplikasi bermula, tanpa kehilangan data.
 
-**Sandaran (backup)** – jalankan di PowerShell komputer anda untuk salin semua data dari pelayan:
+**Sandaran (backup) automatik** – aplikasi menyimpan salinan pangkalan data setiap 24 jam di
+`~/clipwave/data/backups` dan menyimpan 7 salinan terbaharu. Salinan ini selamat dibuat walaupun aplikasi
+sedang berjalan. Untuk menukar jadual, tambah dalam `deploy/.env` (kemudian `docker compose up -d`):
+`BACKUP_HOURS=12` (atau `0` untuk mematikan) dan `BACKUP_KEEP=14`.
+
+**Salin backup ke komputer anda** – jalankan di PowerShell (membuat backup baharu dahulu, kemudian
+memuat turun pangkalan data dan semua video):
 
 ```powershell
-ssh -i $env:USERPROFILE\.ssh\tiktik.key ubuntu@IP_ANDA "tar -czf - -C ~/clipwave data" > C:\REA-Projects\backup-tiktik.tar.gz
+ssh -i $env:USERPROFILE\.ssh\tiktik.key ubuntu@IP_ANDA "cd ~/clipwave/deploy && docker compose exec -T app node scripts/backup.js >&2 && tar -czf - -C ~/clipwave/data backups uploads" > C:\REA-Projects\backup-tiktik.tar.gz
 ```
+
+> Jangan salin fail `clipwave.db` secara terus semasa aplikasi berjalan – salinan begitu boleh rosak.
+> Gunakan fail dalam folder `backups`.
+
+**Pulihkan daripada backup** (di pelayan):
+
+```bash
+cd ~/clipwave/deploy && docker compose stop app
+ls ~/clipwave/data/backups                       # pilih fail, contoh tiktik-20261020-030000.db
+cp ~/clipwave/data/clipwave.db ~/clipwave/data/clipwave-sebelum-pulih.db
+rm -f ~/clipwave/data/clipwave.db-wal ~/clipwave/data/clipwave.db-shm
+cp ~/clipwave/data/backups/tiktik-20261020-030000.db ~/clipwave/data/clipwave.db
+sudo chown 1000:1000 ~/clipwave/data/clipwave.db
+docker compose start app
+```
+
+**Pilihan lanjutan: pautan reset melalui e-mel.** Tanpa tetapan ini, reset kata laluan dibuat oleh
+moderator (Langkah 10). Untuk e-mel automatik, anda perlukan akaun SMTP (contoh Gmail dengan
+*App Password*, Brevo atau Resend). Di komputer anda: `npm install nodemailer`, buat semula
+`tiktik-server.tar.gz` dan kemas kini pelayan. Kemudian tambah dalam `deploy/.env`:
+
+```
+SMTP_URL=smtps://alamat%40gmail.com:APP_PASSWORD@smtp.gmail.com:465
+MAIL_FROM=TikTik <alamat@gmail.com>
+```
+
+dan jalankan `docker compose up -d`. Pengguna perlu menambah e-mel mereka di **Edit profile**.
 
 **Lihat log / mulakan semula:**
 
