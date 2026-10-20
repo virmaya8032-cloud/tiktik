@@ -1,0 +1,12 @@
+node_modules/
+data/
+test/artifacts/
+*.log
+deploy/.env
+.env
+.env.*
+!.env.example
+data/*.db
+data/*.db-*
+data/uploads/
+data/backup/

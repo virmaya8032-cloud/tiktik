@@ -1,0 +1,27 @@
+# TikTik on a single server: the app + Caddy (automatic free HTTPS from Let's Encrypt).
+# Usage (in this folder):  cp .env.example .env  ->  edit .env  ->  docker compose up -d --build
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    environment:
+      TRUST_PROXY: uniquelocal          # trust Caddy (private Docker network) for client IP + https
+      INVITE_CODE: ${INVITE_CODE:?Set INVITE_CODE in .env}
+    volumes:
+      - ../data:/app/data               # database + uploaded videos (kept across updates)
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data                # HTTPS certificates
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

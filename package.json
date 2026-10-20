@@ -1,0 +1,25 @@
+{
+  "name": "clipwave",
+  "version": "1.0.0",
+  "description": "Clipwave - an original short-video social app (vertical feed, uploads, comments, follows).",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch server/index.js",
+    "seed": "node --disable-warning=ExperimentalWarning scripts/seed.js",
+    "set-password": "node --disable-warning=ExperimentalWarning scripts/set-password.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/api.test.js",
+    "e2e": "node --disable-warning=ExperimentalWarning test/e2e.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.55.0"
+  }
+}

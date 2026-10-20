@@ -1,0 +1,217 @@
+{
+ "explore_item_source": "str",
+ "extra": {
+  "fatal_item_ids": [],
+  "logid": "str",
+  "now": "int"
+ },
+ "hasMore": "bool",
+ "itemList": [
+  {
+   "AIGCDescription": "str",
+   "CategoryType": "int",
+   "IsHDBitrate": "bool",
+   "ShowAIGC": "bool",
+   "author": {
+    "avatarLarger": "str",
+    "avatarMedium": "str",
+    "avatarThumb": "str",
+    "commentSetting": "int",
+    "downloadSetting": "int",
+    "duetSetting": "int",
+    "ftc": "bool",
+    "id": "str",
+    "isADVirtual": "bool",
+    "isEmbedBanned": "bool",
+    "nickname": "str",
+    "openFavorite": "bool",
+    "privateAccount": "bool",
+    "relation": "int",
+    "secUid": "str",
+    "secret": "bool",
+    "shortDramaCreator": {},
+    "signature": "str",
+    "stitchSetting": "int",
+    "uniqueId": "str",
+    "verified": "bool"
+   },
+   "authorStats": {
+    "diggCount": "int",
+    "followerCount": "int",
+    "followingCount": "int",
+    "friendCount": "int",
+    "heart": "int",
+    "heartCount": "int",
+    "videoCount": "int"
+   },
+   "authorStatsV2": {
+    "diggCount": "str",
+    "followerCount": "str",
+    "followingCount": "str",
+    "friendCount": "str",
+    "heart": "str",
+    "heartCount": "str",
+    "videoCount": "str"
+   },
+   "backendSourceEventTracking": "str",
+   "collected": "bool",
+   "contents": [
+    {
+     "desc": "str",
+     "textExtra": [
+      "object"
+     ]
+    }
+   ],
+   "createTime": "int",
+   "desc": "str",
+   "digged": "bool",
+   "diversificationId": "int",
+   "duetDisplay": "int",
+   "duetEnabled": "bool",
+   "forFriend": "bool",
+   "id": "str",
+   "isAd": "bool",
+   "isProhibited": "bool",
+   "isReviewing": "bool",
+   "itemCommentStatus": "int",
+   "item_control": {
+    "can_repost": "bool"
+   },
+   "music": {
+    "authorName": "str",
+    "coverLarge": "str",
+    "coverMedium": "str",
+    "coverThumb": "str",
+    "duration": "int",
+    "id": "str",
+    "isCopyrighted": "bool",
+    "is_commerce_music": "bool",
+    "is_unlimited_music": "bool",
+    "original": "bool",
+    "playUrl": "str",
+    "private": "bool",
+    "shoot_duration": "int",
+    "title": "str",
+    "tt2dsp": {}
+   },
+   "officalItem": "bool",
+   "originalItem": "bool",
+   "penaltyContext": {
+    "arb_content_safety_status": "int",
+    "display_penalty_type": "int",
+    "display_policy": "int",
+    "display_ui_type": "int",
+    "ec_global_verdict": "int",
+    "reviewed": "int",
+    "status": "int",
+    "tns_status": "int",
+    "video_status": "int"
+   },
+   "privateItem": "bool",
+   "secret": "bool",
+   "shareEnabled": "bool",
+   "stats": {
+    "collectCount": "int",
+    "commentCount": "int",
+    "diggCount": "int",
+    "playCount": "int",
+    "shareCount": "int"
+   },
+   "statsV2": {
+    "collectCount": "str",
+    "commentCount": "str",
+    "diggCount": "str",
+    "playCount": "str",
+    "repostCount": "str",
+    "shareCount": "str"
+   },
+   "stitchDisplay": "int",
+   "stitchEnabled": "bool",
+   "textExtra": [
+    {
+     "awemeId": "str",
+     "end": "int",
+     "hashtagName": "str",
+     "isCommerce": "bool",
+     "secUid": "str",
+     "start": "int",
+     "subType": "int",
+     "type": "int",
+     "userId": "str",
+     "userUniqueId": "str"
+    }
+   ],
+   "textLanguage": "str",
+   "textTranslatable": "bool",
+   "video": {
+    "PlayAddrStruct": {
+     "DataSize": "int",
+     "FileCs": "str",
+     "FileHash": "str",
+     "Height": "int",
+     "Uri": "str",
+     "UrlKey": "str",
+     "UrlList": [
+      "str"
+     ],
+     "Width": "int"
+    },
+    "VQScore": "str",
+    "bitrate": "int",
+    "bitrateInfo": [
+     {
+      "Bitrate": "int",
+      "BitrateFPS": "int",
+      "CodecType": "str",
+      "Format": "str",
+      "GearName": "str",
+      "MVMAF": "str",
+      "PlayAddr": "object",
+      "QualityType": "int",
+      "VideoExtra": "str"
+     }
+    ],
+    "claInfo": {
+     "enableAutoCaption": "bool",
+     "hasOriginalAudio": "bool",
+     "noCaptionReason": "int"
+    },
+    "codecType": "str",
+    "cover": "str",
+    "definition": "str",
+    "downloadAddr": "str",
+    "duration": "int",
+    "dynamicCover": "str",
+    "encodeUserTag": "str",
+    "encodedType": "str",
+    "format": "str",
+    "height": "int",
+    "id": "str",
+    "originCover": "str",
+    "playAddr": "str",
+    "ratio": "str",
+    "size": "int",
+    "videoID": "str",
+    "videoQuality": "str",
+    "volumeInfo": {
+     "Loudness": "float",
+     "Peak": "float"
+    },
+    "width": "int",
+    "zoomCover": {
+     "240": "str",
+     "480": "str",
+     "720": "str",
+     "960": "str"
+    }
+   }
+  }
+ ],
+ "log_pb": {
+  "impr_id": "str"
+ },
+ "statusCode": "int",
+ "status_code": "int",
+ "status_msg": "str"
+}
