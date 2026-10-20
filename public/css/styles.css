@@ -573,3 +573,7 @@ button.p-stat:hover { color: var(--text); }
   .rc-main { flex-direction: column; }
   .rc-video { width: 140px; }
 }
+.delete-account p, .delete-account ul { margin: 0; }
+.delete-account ul { padding-left: 20px; color: var(--muted); display: grid; gap: 4px; }
+.check-row { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
+.check-row input { accent-color: var(--brand); width: 18px; height: 18px; }

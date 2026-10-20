@@ -616,6 +616,26 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     res.json({ user: serializeUser(db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)) });
   });
 
+  // Permanently delete the signed-in account. Foreign-key cascades remove sessions, videos (with their likes,
+  // comments, shares and views), the user's own likes, favorites, follows, blocks, comments and notifications.
+  // Reports and the moderation log keep their text snapshot but lose the link to the account.
+  router.delete('/me', requireAuth, (req, res) => {
+    const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+    const password = String(req.body?.password || '');
+    if (!password) throw bad('Enter your password to delete your account.');
+    if (!verifyPassword(password, u.password_hash)) throw new HttpError(403, 'That password is not correct.');
+    const files = db.prepare('SELECT video_path, cover_path FROM videos WHERE user_id = ?').all(u.id)
+      .flatMap((v) => [v.video_path, v.cover_path]);
+    files.push(u.avatar_path);
+    tx(db, () => {
+      db.prepare('DELETE FROM users WHERE id = ?').run(u.id);
+      db.prepare('DELETE FROM hashtags WHERE id NOT IN (SELECT hashtag_id FROM video_hashtags)').run();
+    });
+    for (const p of files) if (p) fs.rm(path.join(uploadDir, p), { force: true }, () => {});
+    destroySession(db, req, res);
+    res.json({ ok: true });
+  });
+
   // ---------- search ----------
   const likeEscape = (s) => `%${s.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 

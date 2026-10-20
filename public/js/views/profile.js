@@ -4,7 +4,7 @@ import { icons } from '../icons.js';
 import { videoGrid } from '../components/grid.js';
 import { toggleFollow } from '../components/player.js';
 import { userRow } from './discover.js';
-import { refresh } from '../router.js';
+import { refresh, navigate } from '../router.js';
 import { openReportDialog } from '../components/report.js';
 import { ensureLogin } from '../components/auth.js';
 
@@ -157,6 +157,41 @@ async function blockedAccounts() {
   } catch (ex) { box.replaceChildren(el(html`<p class="empty small">${ex.message}</p>`)); }
 }
 
+function deleteAccount(user) {
+  const form = el(html`<form class="form delete-account">
+    <p>This permanently deletes <strong>@${user.username}</strong> and cannot be undone:</p>
+    <ul class="small">
+      <li>your videos, profile photo and their files</li>
+      <li>your comments (and the replies under them), likes, saved videos and follows</li>
+      <li>your notifications, blocks and login sessions</li>
+    </ul>
+    <label class="field"><span>Password</span><input name="password" type="password" required autocomplete="current-password"></label>
+    <label class="check-row"><input type="checkbox" name="sure" required> I understand this can't be undone</label>
+    <p class="form-error" role="alert" hidden></p>
+    <div class="btn-row end"><button type="button" class="btn d-cancel">Cancel</button><button class="btn btn-primary">Delete my account</button></div>
+  </form>`);
+  const m = modal(form, { title: 'Delete account' });
+  $('.d-cancel', form).addEventListener('click', () => m.close());
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submit = $('.btn-primary', form);
+    submit.disabled = true;
+    try {
+      await api('DELETE', '/api/me', { password: form.password.value });
+      m.close();
+      // Forget the account locally before leaving, so nothing re-requests the deleted profile.
+      store.me = null;
+      await navigate('/');
+      await store.refresh();
+      toast('Your account was deleted', 'success');
+    } catch (ex) {
+      const err = $('.form-error', form);
+      err.textContent = ex.message; err.hidden = false;
+      submit.disabled = false;
+    }
+  });
+}
+
 function editProfile(user) {
   const form = el(html`<form class="form edit-profile">
     <div class="ep-avatar">
@@ -170,6 +205,7 @@ function editProfile(user) {
     <div class="ep-account">
       <h3>Privacy and safety</h3>
       <button type="button" class="link-btn ep-blocks">Blocked accounts</button>
+      <button type="button" class="link-btn btn-danger ep-delete">Delete account</button>
     </div>
   </form>`);
   hydrateAvatars(form);
@@ -188,6 +224,7 @@ function editProfile(user) {
   });
   $('.ep-cancel', form).addEventListener('click', () => m.close());
   $('.ep-blocks', form).addEventListener('click', () => { m.close(); blockedAccounts(); });
+  $('.ep-delete', form).addEventListener('click', () => { m.close(); deleteAccount(user); });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
