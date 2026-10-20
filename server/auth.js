@@ -51,7 +51,7 @@ export function destroySession(db, req, res) {
 /** Express middleware: attaches req.user (or null) from the session cookie. */
 export function sessionMiddleware(db) {
   const find = db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.bio, u.avatar_path, u.verified, s.expires_at
+    SELECT u.id, u.username, u.display_name, u.bio, u.avatar_path, u.verified, u.role, u.suspended_at, s.expires_at
     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?`);
   const drop = db.prepare('DELETE FROM sessions WHERE token = ?');
   return (req, _res, next) => {
@@ -59,7 +59,7 @@ export function sessionMiddleware(db) {
     const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
     if (token) {
       const row = find.get(token);
-      if (row && row.expires_at > Date.now()) req.user = row;
+      if (row && row.expires_at > Date.now() && !row.suspended_at) req.user = row;
       else if (row) drop.run(token);
     }
     next();
@@ -68,5 +68,11 @@ export function sessionMiddleware(db) {
 
 export function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Log in to continue.' });
+  next();
+}
+
+export function requireAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Log in to continue.' });
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only.' });
   next();
 }

@@ -134,13 +134,40 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_open_once ON reports(reporter_id, target_type, target_id) WHERE status = 'open';
+CREATE TABLE IF NOT EXISTS moderation_log (
+  id          INTEGER PRIMARY KEY,
+  admin_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action      TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id   INTEGER NOT NULL,
+  note        TEXT NOT NULL DEFAULT '',
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_modlog_time ON moderation_log(created_at DESC);
 `;
+
+// Columns added after the first release. ALTER TABLE ADD COLUMN keeps existing rows and data.
+const ADDED_COLUMNS = [
+  ['users', 'role', "TEXT NOT NULL DEFAULT 'user'"],
+  ['users', 'suspended_at', 'INTEGER'],
+  ['users', 'suspended_reason', "TEXT NOT NULL DEFAULT ''"],
+  ['videos', 'hidden_at', 'INTEGER'],
+  ['comments', 'hidden_at', 'INTEGER'],
+];
+
+function migrate(db) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
 
 export function openDatabase(file) {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
   const db = new DatabaseSync(file);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 3000;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 

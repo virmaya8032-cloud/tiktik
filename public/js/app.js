@@ -10,6 +10,7 @@ import { profileView, inboxView } from './views/profile.js';
 import { uploadView, studioView, loginView } from './views/upload.js';
 import { friendsView } from './views/friends.js';
 import { infoView, TERMS_LINKS } from './views/info.js';
+import { adminView } from './views/admin.js';
 
 route('/', (ctx) => feedView({ ...ctx, kind: 'foryou' }));
 route('/following', (ctx) => feedView({ ...ctx, kind: 'following' }));
@@ -22,6 +23,7 @@ route('/upload', uploadView);
 route('/studio', studioView);
 route('/inbox', inboxView);
 route('/login', loginView);
+route('/admin', adminView);
 route('/@:username', profileView);
 route('/@:username/video/:id', videoView);
 
@@ -55,6 +57,7 @@ const shell = el(html`<div class="shell">
       <a href="/upload" data-nav="/upload">${icons.plus}<span>Upload</span></a>
       <a href="/inbox" data-nav="/inbox" class="nav-inbox auth-only">${icons.inbox}<span>Activity</span><b class="dot" hidden></b></a>
       <a href="/studio" data-nav="/studio" class="auth-only">${icons.chart}<span>Studio</span></a>
+      <a href="/admin" data-nav="/admin" class="admin-only" hidden>${icons.flag}<span>Moderation</span></a>
       <a href="/login" data-nav="/@me" class="nav-profile">${icons.user}<span>Profile</span></a>
       <div class="more-wrap">
         <button type="button" class="nav-more" aria-haspopup="menu" aria-expanded="false">${icons.menu}<span>More</span></button>
@@ -92,6 +95,7 @@ function renderAccount() {
   const me = store.me;
   for (const a of $$('.nav-profile', shell)) a.setAttribute('href', me ? `/@${me.username}` : '/login');
   for (const a of $$('.auth-only', shell)) a.hidden = !me;
+  for (const a of $$('.admin-only', shell)) a.hidden = !me?.isAdmin;
   for (const d of $$('.nav-inbox .dot', shell)) d.hidden = !store.unread;
   $('.top-actions', shell).hidden = !!me;
   if (me) {
@@ -150,6 +154,7 @@ function openMore() {
     <button role="menuitem" data-act="theme">${dark ? icons.sun : icons.moon}<span>${dark ? 'Light mode' : 'Dark mode'}</span></button>
     <button role="menuitem" data-act="keys">${icons.keyboard}<span>Keyboard shortcuts</span></button>
     ${store.me ? html`<a role="menuitem" href="/studio">${icons.chart}<span>Creator Studio</span></a>
+    ${store.me.isAdmin ? html`<a role="menuitem" href="/admin">${icons.flag}<span>Moderation</span></a>` : ''}
     <button role="menuitem" data-act="logout">${icons.logout}<span>Log out</span></button>` : ''}
   </div>`));
   moreMenu.hidden = false;

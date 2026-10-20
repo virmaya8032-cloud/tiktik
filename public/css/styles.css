@@ -554,3 +554,22 @@ button.p-stat:hover { color: var(--text); }
 .menu-item.btn-danger { color: var(--danger); }
 .ep-account { display: grid; gap: 8px; justify-items: start; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
 .ep-account h3 { margin: 0; font-size: 15px; }
+
+/* Moderation panel */
+.report-list { display: grid; gap: 14px; }
+.report-card { display: grid; gap: 12px; padding: 16px; border-radius: var(--radius); background: var(--bg-2); border: 1px solid var(--line); }
+.rc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rc-head .badge { margin-left: 0; }
+.rc-head small { margin-left: auto; }
+.rc-kind { padding: 3px 10px; font-size: 12px; }
+.rc-main { display: flex; gap: 16px; align-items: flex-start; }
+.rc-video { width: 120px; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; object-fit: cover; flex: none; }
+.rc-text { display: grid; gap: 6px; min-width: 0; }
+.rc-text p { margin: 0; }
+.rc-snapshot { font-size: 15px; overflow-wrap: anywhere; }
+.rc-details { color: var(--muted); font-style: italic; overflow-wrap: anywhere; }
+.rc-state a { color: var(--brand-ink); font-weight: 600; }
+@media (max-width: 720px) {
+  .rc-main { flex-direction: column; }
+  .rc-video { width: 140px; }
+}

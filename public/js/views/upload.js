@@ -236,7 +236,7 @@ export async function studioView() {
   if (!items.length) body.append(el('<tr><td colspan="10" class="empty">No posts yet - upload your first video.</td></tr>'));
   for (const v of items) {
     const tr = el(html`<tr>
-      <td><a class="post-cell" href="/@${v.author.username}/video/${v.id}">${v.coverUrl ? html`<img src="${v.coverUrl}" alt="">` : html`<span class="ph"></span>`}<span>${v.caption || '(no caption)'}</span></a></td>
+      <td><a class="post-cell" href="/@${v.author.username}/video/${v.id}">${v.coverUrl ? html`<img src="${v.coverUrl}" alt="">` : html`<span class="ph"></span>`}<span>${v.caption || '(no caption)'}${v.viewer.hiddenByModerator ? html`<span class="badge" title="Only you can see this video. It was hidden for breaking the community guidelines.">Hidden by moderator</span>` : ''}</span></a></td>
       <td>${timeAgo(v.createdAt)}</td>
       <td><select aria-label="Privacy" class="priv">
         <option value="public" ${v.privacy === 'public' ? 'selected' : ''}>Everyone</option>

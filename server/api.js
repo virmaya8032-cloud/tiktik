@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { tx } from './db.js';
-import { hashPassword, verifyPassword, createSession, destroySession, requireAuth } from './auth.js';
+import { hashPassword, verifyPassword, createSession, destroySession, requireAuth, requireAdmin } from './auth.js';
 import { rankForYou } from './ranking.js';
 
 export const CATEGORIES = ['comedy', 'music', 'dance', 'food', 'sports', 'travel', 'gaming', 'tech', 'art', 'pets', 'other'];
@@ -17,6 +17,8 @@ export const REPORT_REASONS = ['spam', 'harassment', 'hate', 'violence', 'sexual
 
 // SQL: true when users a and b have blocked each other in either direction.
 const BLOCKED_PAIR = (a, b) => `EXISTS (SELECT 1 FROM blocks WHERE (blocker_id = ${a} AND blocked_id = ${b}) OR (blocker_id = ${b} AND blocked_id = ${a}))`;
+// SQL: true when the user is not suspended by a moderator.
+const ACTIVE_USER = (id) => `(SELECT suspended_at FROM users WHERE id = ${id}) IS NULL`;
 
 class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -76,7 +78,8 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   // ---------- serializers ----------
   const VISIBLE = `((v.privacy = 'public' OR v.user_id = :viewer OR (v.privacy = 'followers' AND EXISTS (
       SELECT 1 FROM follows f WHERE f.follower_id = :viewer AND f.followee_id = v.user_id)))
-    AND NOT ${BLOCKED_PAIR(':viewer', 'v.user_id')})`;
+    AND NOT ${BLOCKED_PAIR(':viewer', 'v.user_id')}
+    AND (v.hidden_at IS NULL OR v.user_id = :viewer) AND ${ACTIVE_USER('v.user_id')})`;
   const VIDEO_COLS = `
     v.*, u.username, u.display_name, u.avatar_path, u.verified,
     (SELECT COUNT(*) FROM likes WHERE video_id = v.id) AS like_count,
@@ -121,6 +124,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
         favorited: !!r.favorited,
         followingAuthor: !!r.following_author,
         isAuthor: r.viewer_id === r.user_id,
+        hiddenByModerator: r.viewer_id === r.user_id && !!r.hidden_at,
       },
     };
   }
@@ -212,6 +216,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     if (!u || !verifyPassword(String(req.body?.password || ''), u.password_hash)) {
       throw new HttpError(401, 'Incorrect username or password.');
     }
+    if (u.suspended_at) throw new HttpError(403, 'This account has been suspended for breaking the community guidelines.');
     createSession(db, res, u.id);
     res.json({ user: serializeUser(u) });
   });
@@ -224,7 +229,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   router.get('/auth/me', (req, res) => {
     if (!req.user) return res.json({ user: null });
     const unread = db.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND is_read = 0').get(req.user.id).n;
-    res.json({ user: serializeUser(req.user), unreadNotifications: unread });
+    res.json({ user: { ...serializeUser(req.user), isAdmin: req.user.role === 'admin' }, unreadNotifications: unread });
   });
 
   router.get('/categories', (_req, res) => res.json({ categories: CATEGORIES }));
@@ -325,10 +330,15 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const row = db.prepare('SELECT * FROM videos WHERE id = ?').get(toInt(req.params.id, 0, 0, Number.MAX_SAFE_INTEGER));
     if (!row) throw notFound('Video not found');
     if (row.user_id !== req.user.id) throw new HttpError(403, 'You can only delete your own videos.');
-    db.prepare('DELETE FROM videos WHERE id = ?').run(row.id);
-    for (const p of [row.video_path, row.cover_path]) if (p) fs.rm(path.join(uploadDir, p), { force: true }, () => {});
+    removeVideo(row);
     res.json({ ok: true });
   });
+
+  /** Delete a video row and its media files. */
+  function removeVideo(row) {
+    db.prepare('DELETE FROM videos WHERE id = ?').run(row.id);
+    for (const p of [row.video_path, row.cover_path]) if (p) fs.rm(path.join(uploadDir, p), { force: true }, () => {});
+  }
 
   router.get('/videos/:id/related', (req, res) => {
     const viewer = viewerId(req);
@@ -397,7 +407,8 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   }
   const COMMENT_SQL = `SELECT c.*, u.username, u.display_name, u.avatar_path, u.verified, :viewer AS viewer_id,
       (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id) AS like_count,
-      (SELECT COUNT(*) FROM comments r WHERE r.parent_id = c.id AND NOT ${BLOCKED_PAIR(':viewer', 'r.user_id')}) AS reply_count,
+      (SELECT COUNT(*) FROM comments r WHERE r.parent_id = c.id AND r.hidden_at IS NULL AND ${ACTIVE_USER('r.user_id')}
+        AND NOT ${BLOCKED_PAIR(':viewer', 'r.user_id')}) AS reply_count,
       EXISTS (SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = :viewer) AS liked
     FROM comments c JOIN users u ON u.id = c.user_id`;
 
@@ -405,10 +416,10 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const viewer = viewerId(req);
     const v = mustVisibleVideo(req.params.id, viewer);
     const parent = req.query.parent ? toInt(req.query.parent, 0, 0, Number.MAX_SAFE_INTEGER) : null;
-    const notBlocked = `NOT ${BLOCKED_PAIR(':viewer', 'c.user_id')}`;
+    const shown = `c.hidden_at IS NULL AND u.suspended_at IS NULL AND NOT ${BLOCKED_PAIR(':viewer', 'c.user_id')}`;
     const rows = parent
-      ? db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id = :parent AND ${notBlocked} ORDER BY c.created_at ASC`).all({ viewer, vid: v.id, parent })
-      : db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id IS NULL AND ${notBlocked} ORDER BY like_count DESC, c.created_at DESC LIMIT 200`).all({ viewer, vid: v.id });
+      ? db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id = :parent AND ${shown} ORDER BY c.created_at ASC`).all({ viewer, vid: v.id, parent })
+      : db.prepare(`${COMMENT_SQL} WHERE c.video_id = :vid AND c.parent_id IS NULL AND ${shown} ORDER BY like_count DESC, c.created_at DESC LIMIT 200`).all({ viewer, vid: v.id });
     res.json({ items: rows.map(serializeComment), allowComments: v.allowComments });
   });
 
@@ -421,7 +432,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     let parentId = req.body?.parentId ? toInt(req.body.parentId, 0, 0, Number.MAX_SAFE_INTEGER) : null;
     let parent = null;
     if (parentId) {
-      parent = db.prepare('SELECT * FROM comments WHERE id = ? AND video_id = ?').get(parentId, v.id);
+      parent = db.prepare('SELECT * FROM comments WHERE id = ? AND video_id = ? AND hidden_at IS NULL').get(parentId, v.id);
       if (!parent) throw bad('Reply target not found.');
       if (isBlocked(req.user.id, parent.user_id)) throw new HttpError(403, "You can't reply to this comment.");
       if (parent.parent_id) parentId = parent.parent_id; // keep threads one level deep
@@ -466,6 +477,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
   router.get('/users/:username', (req, res) => {
     const viewer = viewerId(req);
     const u = mustUser(req.params.username);
+    if (u.suspended_at && req.user?.role !== 'admin') throw notFound('User not found');
     const s = userStats(u.id, viewer);
     res.json({
       user: serializeUser(u),
@@ -529,7 +541,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const viewer = viewerId(req);
     const rows = db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) AS followers FROM users u
       WHERE u.id <> :viewer AND u.id NOT IN (SELECT followee_id FROM follows WHERE follower_id = :viewer)
-        AND NOT ${BLOCKED_PAIR(':viewer', 'u.id')}
+        AND NOT ${BLOCKED_PAIR(':viewer', 'u.id')} AND u.suspended_at IS NULL
       ORDER BY followers DESC, u.created_at ASC LIMIT 8`).all({ viewer });
     res.json({ items: rows.map((r) => ({ ...serializeUser(r), followers: r.followers })) });
   });
@@ -611,6 +623,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     return db.prepare(`SELECT u.*, (SELECT COUNT(*) FROM follows WHERE followee_id = u.id) AS followers,
         EXISTS (SELECT 1 FROM follows WHERE follower_id = :viewer AND followee_id = u.id) AS is_following
       FROM users u WHERE (u.username LIKE :q ESCAPE '\\' OR u.display_name LIKE :q ESCAPE '\\') AND NOT ${BLOCKED_PAIR(':viewer', 'u.id')}
+        AND u.suspended_at IS NULL
       ORDER BY (u.username = :exact) DESC, followers DESC LIMIT :limit`)
       .all({ q: likeEscape(q), exact: q, viewer, limit })
       .map((r) => ({ ...serializeUser(r), followers: r.followers, isFollowing: !!r.is_following, isMe: r.id === viewer }));
@@ -665,7 +678,7 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
     const rows = db.prepare(`SELECT n.*, a.username, a.display_name, a.avatar_path, a.verified, v.cover_path, c.body AS comment_body
       FROM notifications n JOIN users a ON a.id = n.actor_id
       LEFT JOIN videos v ON v.id = n.video_id LEFT JOIN comments c ON c.id = n.comment_id
-      WHERE n.user_id = :me AND NOT ${BLOCKED_PAIR(':me', 'n.actor_id')} ORDER BY n.created_at DESC LIMIT 100`).all({ me: req.user.id });
+      WHERE n.user_id = :me AND NOT ${BLOCKED_PAIR(':me', 'n.actor_id')} AND a.suspended_at IS NULL ORDER BY n.created_at DESC LIMIT 100`).all({ me: req.user.id });
     res.json({
       items: rows.map((r) => ({
         id: r.id, type: r.type, read: !!r.is_read, createdAt: r.created_at, videoId: r.video_id,
@@ -691,6 +704,127 @@ export function createApi({ db, uploadDir, inviteCode = '' }) {
       views: t.views + v.stats.views, likes: t.likes + v.stats.likes, comments: t.comments + v.stats.comments, shares: t.shares + v.stats.shares,
     }), { views: 0, likes: 0, comments: 0, shares: 0 });
     res.json({ items, totals: { ...totals, followers: s.followers, videos: items.length } });
+  });
+
+  // ---------- admin moderation ----------
+  // Every moderator action is written to moderation_log and closes the open reports on that target.
+  function moderate(req, action, type, id, note = '', reportStatus = 'actioned') {
+    const now = Date.now();
+    db.prepare('INSERT INTO moderation_log (admin_id, action, target_type, target_id, note, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(req.user.id, action, type, id, String(note || '').slice(0, 500), now);
+    if (reportStatus) {
+      db.prepare(`UPDATE reports SET status = ?, resolved_at = ?, resolved_by = ? WHERE target_type = ? AND target_id = ? AND status = 'open'`)
+        .run(reportStatus, now, req.user.id, type, id);
+    }
+  }
+  const adminId = (req) => toInt(req.params.id, 0, 0, Number.MAX_SAFE_INTEGER);
+  function mustRow(table, id) {
+    const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+    if (!row) throw notFound('Not found');
+    return row;
+  }
+
+  router.get('/admin/summary', requireAdmin, (_req, res) => {
+    res.json(db.prepare(`SELECT
+      (SELECT COUNT(*) FROM reports WHERE status = 'open') AS openReports,
+      (SELECT COUNT(*) FROM users WHERE suspended_at IS NOT NULL) AS suspendedUsers,
+      (SELECT COUNT(*) FROM videos WHERE hidden_at IS NOT NULL) AS hiddenVideos,
+      (SELECT COUNT(*) FROM comments WHERE hidden_at IS NOT NULL) AS hiddenComments`).get());
+  });
+
+  function reportTarget(r) {
+    if (r.target_type === 'video') {
+      const v = db.prepare('SELECT v.*, u.username FROM videos v JOIN users u ON u.id = v.user_id WHERE v.id = ?').get(r.target_id);
+      return v ? { exists: true, hidden: !!v.hidden_at, url: `/@${v.username}/video/${v.id}`, videoUrl: mediaUrl(v.video_path), coverUrl: mediaUrl(v.cover_path) } : { exists: false };
+    }
+    if (r.target_type === 'comment') {
+      const c = db.prepare('SELECT c.*, u.username FROM comments c JOIN videos v ON v.id = c.video_id JOIN users u ON u.id = v.user_id WHERE c.id = ?').get(r.target_id);
+      return c ? { exists: true, hidden: !!c.hidden_at, url: `/@${c.username}/video/${c.video_id}`, body: c.body } : { exists: false };
+    }
+    const u = db.prepare('SELECT * FROM users WHERE id = ?').get(r.target_id);
+    return u ? { exists: true, suspended: !!u.suspended_at, url: `/@${u.username}` } : { exists: false };
+  }
+
+  router.get('/admin/reports', requireAdmin, (req, res) => {
+    const status = ['open', 'actioned', 'dismissed'].includes(req.query.status) ? req.query.status : 'open';
+    const rows = db.prepare(`SELECT r.*, rep.username AS reporter_username, o.username AS owner_username, o.suspended_at AS owner_suspended, o.role AS owner_role,
+        (SELECT COUNT(*) FROM reports x WHERE x.target_type = r.target_type AND x.target_id = r.target_id AND x.status = 'open') AS open_on_target
+      FROM reports r LEFT JOIN users rep ON rep.id = r.reporter_id LEFT JOIN users o ON o.id = r.target_user_id
+      WHERE r.status = ? ORDER BY ${status === 'open' ? 'open_on_target DESC, r.created_at ASC' : 'r.resolved_at DESC'} LIMIT 200`).all(status);
+    res.json({
+      items: rows.map((r) => ({
+        id: r.id, targetType: r.target_type, targetId: r.target_id, reason: r.reason, details: r.details, snapshot: r.snapshot,
+        status: r.status, createdAt: r.created_at, resolvedAt: r.resolved_at, openOnTarget: r.open_on_target,
+        reporter: r.reporter_username ? { username: r.reporter_username } : null,
+        owner: r.target_user_id && r.owner_username
+          ? { id: r.target_user_id, username: r.owner_username, suspended: !!r.owner_suspended, isAdmin: r.owner_role === 'admin' } : null,
+        target: reportTarget(r),
+      })),
+    });
+  });
+
+  router.post('/admin/reports/:id/dismiss', requireAdmin, (req, res) => {
+    const r = mustRow('reports', adminId(req));
+    moderate(req, 'dismiss_reports', r.target_type, r.target_id, req.body?.note, 'dismissed');
+    res.json({ ok: true });
+  });
+
+  for (const [table, type] of [['videos', 'video'], ['comments', 'comment']]) {
+    router.post(`/admin/${table}/:id/hide`, requireAdmin, (req, res) => {
+      const row = mustRow(table, adminId(req));
+      db.prepare(`UPDATE ${table} SET hidden_at = ? WHERE id = ?`).run(Date.now(), row.id);
+      moderate(req, `hide_${type}`, type, row.id, req.body?.note);
+      res.json({ ok: true, hidden: true });
+    });
+    router.post(`/admin/${table}/:id/unhide`, requireAdmin, (req, res) => {
+      const row = mustRow(table, adminId(req));
+      db.prepare(`UPDATE ${table} SET hidden_at = NULL WHERE id = ?`).run(row.id);
+      moderate(req, `unhide_${type}`, type, row.id, req.body?.note, null);
+      res.json({ ok: true, hidden: false });
+    });
+    router.delete(`/admin/${table}/:id`, requireAdmin, (req, res) => {
+      const row = mustRow(table, adminId(req));
+      tx(db, () => {
+        moderate(req, `delete_${type}`, type, row.id, req.body?.note);
+        if (type === 'video') removeVideo(row);
+        else db.prepare('DELETE FROM comments WHERE id = ?').run(row.id);
+      });
+      res.json({ ok: true });
+    });
+  }
+
+  router.post('/admin/users/:id/suspend', requireAdmin, (req, res) => {
+    const u = mustRow('users', adminId(req));
+    if (u.id === req.user.id || u.role === 'admin') throw bad('Admins cannot be suspended here.');
+    const reason = String(req.body?.reason || '').trim().slice(0, 300);
+    if (!reason) throw bad('Give a reason for the suspension.');
+    tx(db, () => {
+      db.prepare('UPDATE users SET suspended_at = ?, suspended_reason = ? WHERE id = ?').run(Date.now(), reason, u.id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+      moderate(req, 'suspend_user', 'user', u.id, reason);
+      // Their videos and comments are hidden by the suspension, so reports about them are handled too.
+      db.prepare(`UPDATE reports SET status = 'actioned', resolved_at = ?, resolved_by = ? WHERE target_user_id = ? AND status = 'open'`)
+        .run(Date.now(), req.user.id, u.id);
+    });
+    res.json({ ok: true, suspended: true });
+  });
+  router.post('/admin/users/:id/unsuspend', requireAdmin, (req, res) => {
+    const u = mustRow('users', adminId(req));
+    db.prepare("UPDATE users SET suspended_at = NULL, suspended_reason = '' WHERE id = ?").run(u.id);
+    moderate(req, 'unsuspend_user', 'user', u.id, req.body?.note, null);
+    res.json({ ok: true, suspended: false });
+  });
+  router.get('/admin/users', requireAdmin, (_req, res) => {
+    const rows = db.prepare('SELECT * FROM users WHERE suspended_at IS NOT NULL ORDER BY suspended_at DESC LIMIT 200').all();
+    res.json({ items: rows.map((u) => ({ ...serializeUser(u), suspendedAt: u.suspended_at, suspendedReason: u.suspended_reason })) });
+  });
+
+  router.get('/admin/log', requireAdmin, (_req, res) => {
+    const rows = db.prepare(`SELECT l.*, a.username AS admin_username FROM moderation_log l LEFT JOIN users a ON a.id = l.admin_id
+      ORDER BY l.created_at DESC, l.id DESC LIMIT 200`).all();
+    res.json({
+      items: rows.map((l) => ({ id: l.id, action: l.action, targetType: l.target_type, targetId: l.target_id, note: l.note, createdAt: l.created_at, admin: l.admin_username })),
+    });
   });
 
   router.use((_req, _res, next) => next(notFound('Unknown API route')));

@@ -6,7 +6,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY public ./public
-COPY scripts/set-password.js ./scripts/set-password.js
+COPY scripts/set-password.js scripts/set-admin.js ./scripts/
 # Database and uploaded videos live in /app/data (mounted from the host so they survive updates).
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
